@@ -11,7 +11,7 @@ interface IClearingHouse {
     }
 
     /// @notice Structure representing a signed order
-    /// @param maker Address of the order creator
+    /// @param creator Address of the order creator
     /// @param executor Address authorized to execute the order
     /// @param nonce Unique number to prevent replay attacks
     /// @param quantity Amount of baseToken to trade
@@ -21,7 +21,7 @@ interface IClearingHouse {
     /// @param side Whether this is a bid (buy) or ask (sell) order
     /// @param onlyFullFill If true, order must be filled completely or not at all
     struct Order {
-        address maker;
+        address owner;
         address executor;
         uint256 nonce;
         uint256 quantity;

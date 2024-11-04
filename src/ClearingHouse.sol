@@ -7,13 +7,14 @@ import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "./interfaces/IClearingHouse.sol";
 import "./interfaces/IClearingHouseErrors.sol";
+import "./interfaces/IClearingHouseEvents.sol";
 
 /// @title ClearingHouse
 /// @notice A decentralized clearing house for executing orders with EIP-712 signatures
 /// @dev Implements only execution with price and quantity checks. Order matching and book-keeping is done off-chain.
-contract ClearingHouse is IClearingHouse, IClearingHouseErrors, EIP712 {
+contract ClearingHouse is IClearingHouse, IClearingHouseErrors, IClearingHouseEvents, EIP712 {
     bytes32 private constant ORDER_TYPEHASH = keccak256(
-        "Order(address maker,address executor,uint256 nonce,uint256 quantity,uint256 limitPrice,uint256 stopPrice,uint256 expireTimestamp,uint8 side,bool onlyFullFill)"
+        "Order(address owner,address executor,uint256 nonce,uint256 quantity,uint256 limitPrice,uint256 stopPrice,uint256 expireTimestamp,uint8 side,bool onlyFullFill)"
     );
 
     address public immutable baseToken;
@@ -35,100 +36,112 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, EIP712 {
     /*                              Public Functions                              */
     /* -------------------------------------------------------------------------- */
 
-    /// @notice Executes a trade between a main order and multiple counter orders
-    /// @param mainOrder The primary order to be executed
-    /// @param counterOrders Array of matching orders to trade against
-    /// @param mainSignature EIP-712 signature for the main order
-    /// @param counterSignatures Array of EIP-712 signatures for counter orders
-    /// @dev All counter orders must be limit orders
+    /// @notice Executes a trade between a taker order and multiple maker orders
+    /// @param takerOrder The primary order to be executed
+    /// @param makerOrders Array of matching orders to trade against
+    /// @param takerSignature EIP-712 signature for the taker order
+    /// @param makerSignatures Array of EIP-712 signatures for maker orders
+    /// @dev All maker orders must be limit orders
     function execute(
-        Order calldata mainOrder,
-        Order[] calldata counterOrders,
-        bytes calldata mainSignature,
-        bytes[] calldata counterSignatures
+        Order calldata takerOrder,
+        Order[] calldata makerOrders,
+        bytes calldata takerSignature,
+        bytes[] calldata makerSignatures
     ) external {
-        (bytes32 mainOrderHash, uint256 mainOrderFilledQuantity) = _verifyAndGetFilledQuantity(mainOrder, mainSignature);
-        uint256 mainOrderAvailableQuantity = mainOrder.quantity - mainOrderFilledQuantity;
+        (bytes32 takerOrderHash, uint256 takerOrderFilledQuantity) =
+            _verifyAndGetFilledQuantity(takerOrder, takerSignature);
+        uint256 takerOrderAvailableQuantity = takerOrder.quantity - takerOrderFilledQuantity;
 
         uint256 baseTokenScaleFactor = 10 ** IERC20Metadata(baseToken).decimals();
 
         uint256 executionPrice;
 
-        uint256[] memory baseQuantities = new uint256[](counterOrders.length);
-        uint256[] memory quoteQuantities = new uint256[](counterOrders.length);
-        bytes32[] memory counterOrderHashes = new bytes32[](counterOrders.length);
+        uint256[] memory baseQuantities = new uint256[](makerOrders.length);
+        uint256[] memory quoteQuantities = new uint256[](makerOrders.length);
+        bytes32[] memory makerOrderHashes = new bytes32[](makerOrders.length);
 
-        for (uint256 i = 0; i < counterOrders.length; i++) {
-            Order calldata counterOrder = counterOrders[i];
-            (bytes32 counterOrderHash, uint256 counterOrderFilledQuantity) =
-                _verifyAndGetFilledQuantity(counterOrder, counterSignatures[i]);
+        for (uint256 i = 0; i < makerOrders.length; i++) {
+            Order calldata makerOrder = makerOrders[i];
+            (bytes32 makerOrderHash, uint256 makerOrderFilledQuantity) =
+                _verifyAndGetFilledQuantity(makerOrder, makerSignatures[i]);
 
-            counterOrderHashes[i] = counterOrderHash;
+            makerOrderHashes[i] = makerOrderHash;
 
             // Verify order sides
-            if (counterOrder.side == mainOrder.side) {
-                revert InvalidOrderSides(uint8(mainOrder.side), uint8(counterOrder.side));
+            if (makerOrder.side == takerOrder.side) {
+                revert InvalidOrderSides(uint8(takerOrder.side), uint8(makerOrder.side));
             }
 
-            executionPrice = counterOrder.limitPrice;
+            executionPrice = makerOrder.limitPrice;
 
             // Verify prices
-            if (mainOrder.side == Side.Bid) {
-                if (executionPrice == 0 || mainOrder.limitPrice < executionPrice) {
-                    revert InvalidPrice(mainOrder.limitPrice, executionPrice, uint8(mainOrder.side));
+            if (takerOrder.side == Side.Bid) {
+                if (executionPrice == 0 || takerOrder.limitPrice < executionPrice) {
+                    revert InvalidPrice(takerOrder.limitPrice, executionPrice, uint8(takerOrder.side));
                 }
             } else {
-                if (executionPrice == type(uint256).max || mainOrder.limitPrice > executionPrice) {
-                    revert InvalidPrice(mainOrder.limitPrice, executionPrice, uint8(mainOrder.side));
+                if (executionPrice == type(uint256).max || takerOrder.limitPrice > executionPrice) {
+                    revert InvalidPrice(takerOrder.limitPrice, executionPrice, uint8(takerOrder.side));
                 }
             }
 
             // Calculate and verify quantities
-            uint256 counterOrderAvailableQuantity = counterOrder.quantity - counterOrderFilledQuantity;
+            uint256 makerOrderAvailableQuantity = makerOrder.quantity - makerOrderFilledQuantity;
 
-            uint256 baseQuantity = mainOrderAvailableQuantity < counterOrderAvailableQuantity
-                ? mainOrderAvailableQuantity
-                : counterOrderAvailableQuantity;
+            uint256 baseQuantity = takerOrderAvailableQuantity < makerOrderAvailableQuantity
+                ? takerOrderAvailableQuantity
+                : makerOrderAvailableQuantity;
 
             if (baseQuantity == 0) {
                 revert ZeroQuantity();
             }
 
-            if (counterOrder.onlyFullFill && baseQuantity != counterOrder.quantity) {
-                revert FullFillRequired(counterOrder.quantity, baseQuantity);
+            if (makerOrder.onlyFullFill && baseQuantity != makerOrder.quantity) {
+                revert FullFillRequired(makerOrder.quantity, baseQuantity);
             }
 
             uint256 quoteQuantity = (executionPrice * baseQuantity) / baseTokenScaleFactor;
 
-            mainOrderAvailableQuantity -= baseQuantity;
+            takerOrderAvailableQuantity -= baseQuantity;
             baseQuantities[i] = baseQuantity;
             quoteQuantities[i] = quoteQuantity;
         }
 
         // Verify full fill
-        if (mainOrder.onlyFullFill && mainOrderAvailableQuantity > 0) {
-            revert FullFillRequired(mainOrder.quantity, mainOrder.quantity - mainOrderAvailableQuantity);
+        if (takerOrder.onlyFullFill && takerOrderAvailableQuantity > 0) {
+            revert FullFillRequired(takerOrder.quantity, takerOrder.quantity - takerOrderAvailableQuantity);
         }
 
         // Update past orders
-        pastOrders[mainOrderHash] = mainOrder.quantity - mainOrderAvailableQuantity;
+        pastOrders[takerOrderHash] = takerOrder.quantity - takerOrderAvailableQuantity;
 
         // Update execution price
         lastExecutionPrice = executionPrice;
 
-        for (uint256 i = 0; i < counterOrders.length; i++) {
-            Order calldata counterOrder = counterOrders[i];
+        for (uint256 i = 0; i < makerOrders.length; i++) {
+            Order calldata makerOrder = makerOrders[i];
             // Update past orders
-            pastOrders[counterOrderHashes[i]] += baseQuantities[i];
+            pastOrders[makerOrderHashes[i]] += baseQuantities[i];
 
             // Transfer assets
-            if (mainOrder.side == Side.Bid) {
-                IERC20(baseToken).transferFrom(counterOrder.maker, mainOrder.maker, baseQuantities[i]);
-                IERC20(quoteToken).transferFrom(mainOrder.maker, counterOrder.maker, quoteQuantities[i]);
+            if (takerOrder.side == Side.Bid) {
+                IERC20(baseToken).transferFrom(makerOrder.owner, takerOrder.owner, baseQuantities[i]);
+                IERC20(quoteToken).transferFrom(takerOrder.owner, makerOrder.owner, quoteQuantities[i]);
             } else {
-                IERC20(quoteToken).transferFrom(counterOrder.maker, mainOrder.maker, quoteQuantities[i]);
-                IERC20(baseToken).transferFrom(mainOrder.maker, counterOrder.maker, baseQuantities[i]);
+                IERC20(quoteToken).transferFrom(makerOrder.owner, takerOrder.owner, quoteQuantities[i]);
+                IERC20(baseToken).transferFrom(takerOrder.owner, makerOrder.owner, baseQuantities[i]);
             }
+
+            // Emit event for each execution
+            emit OrderExecuted(
+                takerOrderHash,
+                makerOrderHashes[i],
+                executionPrice,
+                baseQuantities[i],
+                quoteQuantities[i],
+                makerOrder.owner,
+                takerOrder.owner
+            );
         }
     }
 
@@ -136,12 +149,15 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, EIP712 {
     /// @param order The order to cancel
     /// @dev Can only be called by the order maker
     function cancelOrder(Order calldata order) external {
-        if (order.maker != msg.sender) {
-            revert UnauthorizedCancellation(msg.sender, order.maker);
+        if (order.owner != msg.sender) {
+            revert UnauthorizedCancellation(msg.sender, order.owner);
         }
 
         bytes32 orderHash = hashOrder(order);
         pastOrders[orderHash] = order.quantity;
+
+        // Emit cancel event
+        emit OrderCancelled(orderHash, msg.sender);
     }
 
     /// @notice Computes the EIP-712 hash of an order
@@ -151,7 +167,7 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, EIP712 {
         return keccak256(
             abi.encode(
                 ORDER_TYPEHASH,
-                order.maker,
+                order.owner,
                 order.executor,
                 order.nonce,
                 order.quantity,
@@ -183,7 +199,7 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, EIP712 {
         view
         returns (bytes32 orderHash, uint256 filledQuantity)
     {
-        if (order.maker == address(0) || order.executor == address(0)) {
+        if (order.owner == address(0) || order.executor == address(0)) {
             revert ZeroAddress();
         }
 
@@ -206,8 +222,8 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, EIP712 {
         }
 
         orderHash = hashOrder(order);
-        if (!_verifyOrderSignature(orderHash, order.maker, signature)) {
-            revert InvalidSignature(msg.sender, order.maker);
+        if (!_verifyOrderSignature(orderHash, order.owner, signature)) {
+            revert InvalidSignature(msg.sender, order.owner);
         }
 
         filledQuantity = pastOrders[orderHash];
