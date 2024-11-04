@@ -17,6 +17,8 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, IClearingHouseEv
         "Order(address owner,address executor,uint256 nonce,uint256 quantity,uint256 limitPrice,uint256 stopPrice,uint256 expireTimestamp,uint8 side,bool onlyFullFill)"
     );
 
+    uint256 private immutable _baseTokenScaleFactor;
+
     address public immutable baseToken;
     address public immutable quoteToken;
 
@@ -30,6 +32,7 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, IClearingHouseEv
         lastExecutionPrice = initialExecutionPrice;
         baseToken = baseToken_;
         quoteToken = quoteToken_;
+        _baseTokenScaleFactor = 10 ** IERC20Metadata(baseToken_).decimals();
     }
 
     /* -------------------------------------------------------------------------- */
@@ -51,8 +54,6 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, IClearingHouseEv
         (bytes32 takerOrderHash, uint256 takerOrderFilledQuantity) =
             _verifyAndGetFilledQuantity(takerOrder, takerSignature);
         uint256 takerOrderAvailableQuantity = takerOrder.quantity - takerOrderFilledQuantity;
-
-        uint256 baseTokenScaleFactor = 10 ** IERC20Metadata(baseToken).decimals();
 
         uint256 executionPrice;
 
@@ -100,7 +101,7 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, IClearingHouseEv
                 revert FullFillRequired(makerOrder.quantity, baseQuantity);
             }
 
-            uint256 quoteQuantity = (executionPrice * baseQuantity) / baseTokenScaleFactor;
+            uint256 quoteQuantity = (executionPrice * baseQuantity) / _baseTokenScaleFactor;
 
             takerOrderAvailableQuantity -= baseQuantity;
             baseQuantities[i] = baseQuantity;
