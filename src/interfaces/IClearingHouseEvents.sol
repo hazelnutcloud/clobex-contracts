@@ -5,25 +5,25 @@ pragma solidity ^0.8.28;
 /// @notice Events interface for the ClearingHouse contract
 interface IClearingHouseEvents {
     /// @notice Emitted when an order is executed
-    /// @param takerOrderHash Hash of the taker order
+    /// @param maker Address of the maker order owner
+    /// @param taker Address of the taker order owner
     /// @param makerOrderHash Hash of the maker order
-    /// @param executionPrice Price at which the trade was executed
+    /// @param takerOrderHash Hash of the taker order
     /// @param baseQuantity Amount of base tokens traded
     /// @param quoteQuantity Amount of quote tokens traded
-    /// @param maker Maker of the maker order
-    /// @param taker Maker of the taker order
+    /// @param takerSide Side of the taker order
     event OrderExecuted(
-        bytes32 indexed takerOrderHash,
-        bytes32 indexed makerOrderHash,
-        uint256 executionPrice,
+        address indexed maker,
+        address indexed taker,
+        bytes32 makerOrderHash,
+        bytes32 takerOrderHash,
         uint256 baseQuantity,
         uint256 quoteQuantity,
-        address indexed maker,
-        address taker
+        uint8 takerSide
     );
 
     /// @notice Emitted when an order is cancelled
-    /// @param orderHash Hash of the cancelled order
     /// @param maker Address that cancelled the order
-    event OrderCancelled(bytes32 indexed orderHash, address indexed maker);
+    /// @param orderHash Hash of the cancelled order
+    event OrderCancelled(address indexed maker, bytes32 orderHash);
 }

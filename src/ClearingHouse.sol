@@ -134,13 +134,13 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, IClearingHouseEv
 
             // Emit event for each execution
             emit OrderExecuted(
-                takerOrderHash,
+                makerOrder.owner,
+                takerOrder.owner,
                 makerOrderHashes[i],
-                executionPrice,
+                takerOrderHash,
                 baseQuantities[i],
                 quoteQuantities[i],
-                makerOrder.owner,
-                takerOrder.owner
+                uint8(takerOrder.side)
             );
         }
     }
@@ -157,7 +157,7 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, IClearingHouseEv
         pastOrders[orderHash] = order.quantity;
 
         // Emit cancel event
-        emit OrderCancelled(orderHash, msg.sender);
+        emit OrderCancelled(msg.sender, orderHash);
     }
 
     /// @notice Computes the EIP-712 hash of an order
