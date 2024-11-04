@@ -24,7 +24,9 @@ interface IClearingHouseErrors {
     error InvalidOrderSides(uint8 mainOrderSide, uint8 counterOrderSide);
 
     /// @notice Thrown when token pairs don't match
-    error TokenPairMismatch(address mainBaseToken, address mainQuoteToken, address counterBaseToken, address counterQuoteToken);
+    error TokenPairMismatch(
+        address mainBaseToken, address mainQuoteToken, address counterBaseToken, address counterQuoteToken
+    );
 
     /// @notice Thrown when price conditions are not met
     error InvalidPrice(uint256 limitPrice, uint256 executionPrice, uint8 side);
@@ -37,4 +39,4 @@ interface IClearingHouseErrors {
 
     /// @notice Thrown when caller is not the order maker
     error UnauthorizedCancellation(address caller, address maker);
-} 
+}

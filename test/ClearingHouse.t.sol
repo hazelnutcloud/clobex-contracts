@@ -27,11 +27,7 @@ contract ClearingHouseTest is Test {
         quoteToken = new MockERC20("Quote Token", "QUOTE", 18);
 
         // Deploy clearing house
-        clearingHouse = new ClearingHouse(
-            INITIAL_PRICE,
-            address(baseToken),
-            address(quoteToken)
-        );
+        clearingHouse = new ClearingHouse(INITIAL_PRICE, address(baseToken), address(quoteToken));
 
         // Setup accounts
         (maker1, maker1PrivateKey) = makeAddrAndKey("maker1");
@@ -65,32 +61,22 @@ contract ClearingHouseTest is Test {
         ClearingHouse.Side side,
         bool onlyFullFill
     ) internal view returns (ClearingHouse.Order memory) {
-        return
-            ClearingHouse.Order({
-                maker: maker,
-                executor: executor,
-                nonce: 0,
-                quantity: quantity,
-                limitPrice: limitPrice,
-                stopPrice: stopPrice,
-                expireTimestamp: expireTimestamp,
-                side: side,
-                onlyFullFill: onlyFullFill
-            });
+        return ClearingHouse.Order({
+            maker: maker,
+            executor: executor,
+            nonce: 0,
+            quantity: quantity,
+            limitPrice: limitPrice,
+            stopPrice: stopPrice,
+            expireTimestamp: expireTimestamp,
+            side: side,
+            onlyFullFill: onlyFullFill
+        });
     }
 
-    function _signOrder(
-        ClearingHouse.Order memory order,
-        uint256 privateKey
-    ) internal view returns (bytes memory) {
+    function _signOrder(ClearingHouse.Order memory order, uint256 privateKey) internal view returns (bytes memory) {
         bytes32 orderHash = clearingHouse.hashOrder(order);
-        bytes32 digest = keccak256(
-            abi.encodePacked(
-                "\x19\x01",
-                clearingHouse.DOMAIN_SEPARATOR(),
-                orderHash
-            )
-        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", clearingHouse.DOMAIN_SEPARATOR(), orderHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(r, s, v);
     }
@@ -111,18 +97,10 @@ contract ClearingHouseTest is Test {
 
         // Create a matching ask limit order
         ClearingHouse.Order memory counterOrder = _createOrder(
-            maker2,
-            10e18,
-            100e18,
-            type(uint256).max,
-            block.timestamp + 1 days,
-            ClearingHouse.Side.Ask,
-            false
+            maker2, 10e18, 100e18, type(uint256).max, block.timestamp + 1 days, ClearingHouse.Side.Ask, false
         );
 
-        ClearingHouse.Order[] memory counterOrders = new ClearingHouse.Order[](
-            1
-        );
+        ClearingHouse.Order[] memory counterOrders = new ClearingHouse.Order[](1);
         counterOrders[0] = counterOrder;
 
         bytes memory mainSignature = _signOrder(mainOrder, maker1PrivateKey);
@@ -136,111 +114,16 @@ contract ClearingHouseTest is Test {
         uint256 maker2QuoteBalanceBefore = quoteToken.balanceOf(maker2);
 
         // Execute orders
-        clearingHouse.execute(
-            mainOrder,
-            counterOrders,
-            mainSignature,
-            counterSignatures
-        );
+        clearingHouse.execute(mainOrder, counterOrders, mainSignature, counterSignatures);
 
         // Verify balances after
         assertEq(baseToken.balanceOf(maker1), maker1BaseBalanceBefore + 10e18);
-        assertEq(
-            quoteToken.balanceOf(maker1),
-            maker1QuoteBalanceBefore - 1000e18
-        );
+        assertEq(quoteToken.balanceOf(maker1), maker1QuoteBalanceBefore - 1000e18);
         assertEq(baseToken.balanceOf(maker2), maker2BaseBalanceBefore - 10e18);
-        assertEq(
-            quoteToken.balanceOf(maker2),
-            maker2QuoteBalanceBefore + 1000e18
-        );
+        assertEq(quoteToken.balanceOf(maker2), maker2QuoteBalanceBefore + 1000e18);
 
         vm.stopPrank();
     }
-
-    // function test_StopOrder_Ask() public {
-    //     // Set last execution price
-    //     vm.startPrank(executor);
-
-    //     // Create and execute a regular trade to set last execution price to 90
-    //     ClearingHouse.Order memory initialBid = _createOrder(
-    //         maker1,
-    //         1e18,
-    //         90e18,
-    //         0,
-    //         block.timestamp + 1 days,
-    //         ClearingHouse.Side.Bid,
-    //         false
-    //     );
-
-    //     ClearingHouse.Order memory initialAsk = _createOrder(
-    //         maker2,
-    //         1e18,
-    //         90e18,
-    //         0,
-    //         block.timestamp + 1 days,
-    //         ClearingHouse.Side.Ask,
-    //         false
-    //     );
-
-    //     ClearingHouse.Order[]
-    //         memory initialCounterOrders = new ClearingHouse.Order[](1);
-    //     initialCounterOrders[0] = initialAsk;
-
-    //     bytes memory initialBidSig = _signOrder(initialBid, maker1PrivateKey);
-    //     bytes[] memory initialAskSigs = new bytes[](1);
-    //     initialAskSigs[0] = _signOrder(initialAsk, maker2PrivateKey);
-
-    //     clearingHouse.execute(
-    //         initialBid,
-    //         initialCounterOrders,
-    //         initialBidSig,
-    //         initialAskSigs
-    //     );
-
-    //     // Now create a stop order that should trigger
-    //     ClearingHouse.Order memory stopOrder = _createOrder(
-    //         maker1,
-    //         10e18,
-    //         85e18, // limit price
-    //         90e18, // stop price - should trigger when price <= 90
-    //         block.timestamp + 1 days,
-    //         ClearingHouse.Side.Ask,
-    //         false
-    //     );
-
-    //     ClearingHouse.Order memory matchingBid = _createOrder(
-    //         maker2,
-    //         10e18,
-    //         85e18,
-    //         0,
-    //         block.timestamp + 1 days,
-    //         ClearingHouse.Side.Bid,
-    //         false
-    //     );
-
-    //     ClearingHouse.Order[] memory counterOrders = new ClearingHouse.Order[](
-    //         1
-    //     );
-    //     counterOrders[0] = matchingBid;
-
-    //     bytes memory stopOrderSig = _signOrder(stopOrder, maker1PrivateKey);
-    //     bytes[] memory counterSigs = new bytes[](1);
-    //     counterSigs[0] = _signOrder(matchingBid, maker2PrivateKey);
-
-    //     // Execute stop order
-    //     clearingHouse.execute(
-    //         stopOrder,
-    //         counterOrders,
-    //         stopOrderSig,
-    //         counterSigs
-    //     );
-
-    //     // Verify last execution price
-    //     assertEq(clearingHouse.lastExecutionPrice(), 85e18);
-
-    //     vm.stopPrank();
-    // }
 
     function test_RevertWhen_OrderExpired() public {
         vm.startPrank(executor);
@@ -255,19 +138,10 @@ contract ClearingHouseTest is Test {
             false
         );
 
-        ClearingHouse.Order memory counterOrder = _createOrder(
-            maker2,
-            10e18,
-            100e18,
-            0,
-            block.timestamp + 1 days,
-            ClearingHouse.Side.Ask,
-            false
-        );
+        ClearingHouse.Order memory counterOrder =
+            _createOrder(maker2, 10e18, 100e18, 0, block.timestamp + 1 days, ClearingHouse.Side.Ask, false);
 
-        ClearingHouse.Order[] memory counterOrders = new ClearingHouse.Order[](
-            1
-        );
+        ClearingHouse.Order[] memory counterOrders = new ClearingHouse.Order[](1);
         counterOrders[0] = counterOrder;
 
         bytes memory mainSignature = _signOrder(mainOrder, maker1PrivateKey);
@@ -275,12 +149,7 @@ contract ClearingHouseTest is Test {
         counterSignatures[0] = _signOrder(counterOrder, maker2PrivateKey);
 
         vm.expectRevert(); // Order expired
-        clearingHouse.execute(
-            mainOrder,
-            counterOrders,
-            mainSignature,
-            counterSignatures
-        );
+        clearingHouse.execute(mainOrder, counterOrders, mainSignature, counterSignatures);
 
         vm.stopPrank();
     }
@@ -309,9 +178,7 @@ contract ClearingHouseTest is Test {
             false
         );
 
-        ClearingHouse.Order[] memory counterOrders = new ClearingHouse.Order[](
-            1
-        );
+        ClearingHouse.Order[] memory counterOrders = new ClearingHouse.Order[](1);
         counterOrders[0] = counterOrder;
 
         bytes memory mainSignature = _signOrder(mainOrder, maker1PrivateKey);
@@ -319,26 +186,14 @@ contract ClearingHouseTest is Test {
         counterSignatures[0] = _signOrder(counterOrder, maker2PrivateKey);
 
         vm.expectRevert(); // Cannot partially fill
-        clearingHouse.execute(
-            mainOrder,
-            counterOrders,
-            mainSignature,
-            counterSignatures
-        );
+        clearingHouse.execute(mainOrder, counterOrders, mainSignature, counterSignatures);
 
         vm.stopPrank();
     }
 
     function test_CancelOrder() public {
-        ClearingHouse.Order memory order = _createOrder(
-            maker1,
-            10e18,
-            100e18,
-            0,
-            block.timestamp + 1 days,
-            ClearingHouse.Side.Bid,
-            false
-        );
+        ClearingHouse.Order memory order =
+            _createOrder(maker1, 10e18, 100e18, 0, block.timestamp + 1 days, ClearingHouse.Side.Bid, false);
 
         vm.prank(maker1);
         clearingHouse.cancelOrder(order);

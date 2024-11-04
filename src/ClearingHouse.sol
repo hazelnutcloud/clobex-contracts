@@ -11,13 +11,10 @@ import "./interfaces/IClearingHouseErrors.sol";
 /// @dev Implements only execution with price and quantity checks. Order matching and book-keeping is done off-chain.
 contract ClearingHouse is IClearingHouseErrors {
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
-        keccak256(
-            "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-        );
-    bytes32 private constant ORDER_TYPEHASH =
-        keccak256(
-            "Order(address maker,address executor,uint256 nonce,uint256 quantity,uint256 limitPrice,uint256 stopPrice,uint256 expireTimestamp,uint8 side,bool onlyFullFill)"
-        );
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+    bytes32 private constant ORDER_TYPEHASH = keccak256(
+        "Order(address maker,address executor,uint256 nonce,uint256 quantity,uint256 limitPrice,uint256 stopPrice,uint256 expireTimestamp,uint8 side,bool onlyFullFill)"
+    );
     bytes32 public immutable DOMAIN_SEPARATOR;
     address public immutable baseToken;
     address public immutable quoteToken;
@@ -58,11 +55,7 @@ contract ClearingHouse is IClearingHouseErrors {
     /// @notice The price at which the last trade was executed
     uint256 public lastExecutionPrice;
 
-    constructor(
-        uint256 initialExecutionPrice,
-        address baseToken_,
-        address quoteToken_
-    ) {
+    constructor(uint256 initialExecutionPrice, address baseToken_, address quoteToken_) {
         DOMAIN_SEPARATOR = keccak256(
             abi.encode(
                 EIP712_DOMAIN_TYPEHASH,
@@ -93,73 +86,46 @@ contract ClearingHouse is IClearingHouseErrors {
         bytes calldata mainSignature,
         bytes[] calldata counterSignatures
     ) external {
-        (
-            bytes32 mainOrderHash,
-            uint256 mainOrderFilledQuantity
-        ) = _verifyAndGetFilledQuantity(mainOrder, mainSignature);
-        uint256 mainOrderAvailableQuantity = mainOrder.quantity -
-            mainOrderFilledQuantity;
+        (bytes32 mainOrderHash, uint256 mainOrderFilledQuantity) = _verifyAndGetFilledQuantity(mainOrder, mainSignature);
+        uint256 mainOrderAvailableQuantity = mainOrder.quantity - mainOrderFilledQuantity;
 
-        uint256 baseTokenScaleFactor = 10 **
-            IERC20Metadata(baseToken).decimals();
+        uint256 baseTokenScaleFactor = 10 ** IERC20Metadata(baseToken).decimals();
 
         uint256 executionPrice;
 
         uint256[] memory baseQuantities = new uint256[](counterOrders.length);
         uint256[] memory quoteQuantities = new uint256[](counterOrders.length);
-        bytes32[] memory counterOrderHashes = new bytes32[](
-            counterOrders.length
-        );
+        bytes32[] memory counterOrderHashes = new bytes32[](counterOrders.length);
 
         for (uint256 i = 0; i < counterOrders.length; i++) {
             Order calldata counterOrder = counterOrders[i];
-            (
-                bytes32 counterOrderHash,
-                uint256 counterOrderFilledQuantity
-            ) = _verifyAndGetFilledQuantity(counterOrder, counterSignatures[i]);
+            (bytes32 counterOrderHash, uint256 counterOrderFilledQuantity) =
+                _verifyAndGetFilledQuantity(counterOrder, counterSignatures[i]);
 
             counterOrderHashes[i] = counterOrderHash;
 
             // Verify order sides
             if (counterOrder.side == mainOrder.side) {
-                revert InvalidOrderSides(
-                    uint8(mainOrder.side),
-                    uint8(counterOrder.side)
-                );
+                revert InvalidOrderSides(uint8(mainOrder.side), uint8(counterOrder.side));
             }
 
             executionPrice = counterOrder.limitPrice;
 
             // Verify prices
             if (mainOrder.side == Side.Bid) {
-                if (
-                    executionPrice == 0 || mainOrder.limitPrice < executionPrice
-                ) {
-                    revert InvalidPrice(
-                        mainOrder.limitPrice,
-                        executionPrice,
-                        uint8(mainOrder.side)
-                    );
+                if (executionPrice == 0 || mainOrder.limitPrice < executionPrice) {
+                    revert InvalidPrice(mainOrder.limitPrice, executionPrice, uint8(mainOrder.side));
                 }
             } else {
-                if (
-                    executionPrice == type(uint256).max ||
-                    mainOrder.limitPrice > executionPrice
-                ) {
-                    revert InvalidPrice(
-                        mainOrder.limitPrice,
-                        executionPrice,
-                        uint8(mainOrder.side)
-                    );
+                if (executionPrice == type(uint256).max || mainOrder.limitPrice > executionPrice) {
+                    revert InvalidPrice(mainOrder.limitPrice, executionPrice, uint8(mainOrder.side));
                 }
             }
 
             // Calculate and verify quantities
-            uint256 counterOrderAvailableQuantity = counterOrder.quantity -
-                counterOrderFilledQuantity;
+            uint256 counterOrderAvailableQuantity = counterOrder.quantity - counterOrderFilledQuantity;
 
-            uint256 baseQuantity = mainOrderAvailableQuantity <
-                counterOrderAvailableQuantity
+            uint256 baseQuantity = mainOrderAvailableQuantity < counterOrderAvailableQuantity
                 ? mainOrderAvailableQuantity
                 : counterOrderAvailableQuantity;
 
@@ -167,15 +133,11 @@ contract ClearingHouse is IClearingHouseErrors {
                 revert ZeroQuantity();
             }
 
-            if (
-                counterOrder.onlyFullFill &&
-                baseQuantity != counterOrder.quantity
-            ) {
+            if (counterOrder.onlyFullFill && baseQuantity != counterOrder.quantity) {
                 revert FullFillRequired(counterOrder.quantity, baseQuantity);
             }
 
-            uint256 quoteQuantity = (executionPrice * baseQuantity) /
-                baseTokenScaleFactor;
+            uint256 quoteQuantity = (executionPrice * baseQuantity) / baseTokenScaleFactor;
 
             mainOrderAvailableQuantity -= baseQuantity;
             baseQuantities[i] = baseQuantity;
@@ -184,16 +146,11 @@ contract ClearingHouse is IClearingHouseErrors {
 
         // Verify full fill
         if (mainOrder.onlyFullFill && mainOrderAvailableQuantity > 0) {
-            revert FullFillRequired(
-                mainOrder.quantity,
-                mainOrder.quantity - mainOrderAvailableQuantity
-            );
+            revert FullFillRequired(mainOrder.quantity, mainOrder.quantity - mainOrderAvailableQuantity);
         }
 
         // Update past orders
-        pastOrders[mainOrderHash] =
-            mainOrder.quantity -
-            mainOrderAvailableQuantity;
+        pastOrders[mainOrderHash] = mainOrder.quantity - mainOrderAvailableQuantity;
 
         // Update execution price
         lastExecutionPrice = executionPrice;
@@ -205,27 +162,11 @@ contract ClearingHouse is IClearingHouseErrors {
 
             // Transfer assets
             if (mainOrder.side == Side.Bid) {
-                IERC20(baseToken).transferFrom(
-                    counterOrder.maker,
-                    mainOrder.maker,
-                    baseQuantities[i]
-                );
-                IERC20(quoteToken).transferFrom(
-                    mainOrder.maker,
-                    counterOrder.maker,
-                    quoteQuantities[i]
-                );
+                IERC20(baseToken).transferFrom(counterOrder.maker, mainOrder.maker, baseQuantities[i]);
+                IERC20(quoteToken).transferFrom(mainOrder.maker, counterOrder.maker, quoteQuantities[i]);
             } else {
-                IERC20(quoteToken).transferFrom(
-                    counterOrder.maker,
-                    mainOrder.maker,
-                    quoteQuantities[i]
-                );
-                IERC20(baseToken).transferFrom(
-                    mainOrder.maker,
-                    counterOrder.maker,
-                    baseQuantities[i]
-                );
+                IERC20(quoteToken).transferFrom(counterOrder.maker, mainOrder.maker, quoteQuantities[i]);
+                IERC20(baseToken).transferFrom(mainOrder.maker, counterOrder.maker, baseQuantities[i]);
             }
         }
     }
@@ -246,21 +187,20 @@ contract ClearingHouse is IClearingHouseErrors {
     /// @param order The order to hash
     /// @return The hash of the order
     function hashOrder(Order calldata order) public pure returns (bytes32) {
-        return
-            keccak256(
-                abi.encode(
-                    ORDER_TYPEHASH,
-                    order.maker,
-                    order.executor,
-                    order.nonce,
-                    order.quantity,
-                    order.limitPrice,
-                    order.stopPrice,
-                    order.expireTimestamp,
-                    order.side,
-                    order.onlyFullFill
-                )
-            );
+        return keccak256(
+            abi.encode(
+                ORDER_TYPEHASH,
+                order.maker,
+                order.executor,
+                order.nonce,
+                order.quantity,
+                order.limitPrice,
+                order.stopPrice,
+                order.expireTimestamp,
+                order.side,
+                order.onlyFullFill
+            )
+        );
     }
 
     /* -------------------------------------------------------------------------- */
@@ -273,10 +213,11 @@ contract ClearingHouse is IClearingHouseErrors {
     /// @return orderHash The computed hash of the order
     /// @return filledQuantity The amount of the order that has been filled
     /// @dev Checks for zero addresses, expiration, executor authorization, and stop price conditions
-    function _verifyAndGetFilledQuantity(
-        Order calldata order,
-        bytes calldata signature
-    ) internal view returns (bytes32 orderHash, uint256 filledQuantity) {
+    function _verifyAndGetFilledQuantity(Order calldata order, bytes calldata signature)
+        internal
+        view
+        returns (bytes32 orderHash, uint256 filledQuantity)
+    {
         if (order.maker == address(0) || order.executor == address(0)) {
             revert ZeroAddress();
         }
@@ -291,19 +232,11 @@ contract ClearingHouse is IClearingHouseErrors {
 
         if (order.side == Side.Bid) {
             if (order.stopPrice > lastExecutionPrice) {
-                revert InvalidStopPrice(
-                    order.stopPrice,
-                    lastExecutionPrice,
-                    uint8(order.side)
-                );
+                revert InvalidStopPrice(order.stopPrice, lastExecutionPrice, uint8(order.side));
             }
         } else {
             if (order.stopPrice < lastExecutionPrice) {
-                revert InvalidStopPrice(
-                    order.stopPrice,
-                    lastExecutionPrice,
-                    uint8(order.side)
-                );
+                revert InvalidStopPrice(order.stopPrice, lastExecutionPrice, uint8(order.side));
             }
         }
 
@@ -324,14 +257,12 @@ contract ClearingHouse is IClearingHouseErrors {
     /// @param signature The signature to verify
     /// @return True if the signature is valid, false otherwise
     /// @dev Uses EIP-712 for signature verification
-    function _verifyOrderSignature(
-        bytes32 orderHash,
-        address orderOwner,
-        bytes calldata signature
-    ) internal view returns (bool) {
-        bytes32 digest = keccak256(
-            abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, orderHash)
-        );
+    function _verifyOrderSignature(bytes32 orderHash, address orderOwner, bytes calldata signature)
+        internal
+        view
+        returns (bool)
+    {
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, orderHash));
 
         address signer = ECDSA.recover(digest, signature);
         return signer == orderOwner;
