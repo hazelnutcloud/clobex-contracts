@@ -4,50 +4,20 @@ pragma solidity ^0.8.28;
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import "./interfaces/IClearingHouse.sol";
 import "./interfaces/IClearingHouseErrors.sol";
 
 /// @title ClearingHouse
 /// @notice A decentralized clearing house for executing orders with EIP-712 signatures
 /// @dev Implements only execution with price and quantity checks. Order matching and book-keeping is done off-chain.
-contract ClearingHouse is IClearingHouseErrors {
-    bytes32 private constant EIP712_DOMAIN_TYPEHASH =
-        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+contract ClearingHouse is IClearingHouse, IClearingHouseErrors, EIP712 {
     bytes32 private constant ORDER_TYPEHASH = keccak256(
         "Order(address maker,address executor,uint256 nonce,uint256 quantity,uint256 limitPrice,uint256 stopPrice,uint256 expireTimestamp,uint8 side,bool onlyFullFill)"
     );
-    bytes32 public immutable DOMAIN_SEPARATOR;
+
     address public immutable baseToken;
     address public immutable quoteToken;
-
-    /// @notice Represents the side of an order (Bid = buying, Ask = selling)
-    enum Side {
-        Bid,
-        Ask
-    }
-
-    /// @notice Structure representing a signed order
-    /// @param maker Address of the order creator
-    /// @param executor Address authorized to execute the order
-    /// @param baseToken Address of the token being traded
-    /// @param quoteToken Address of the token used for pricing
-    /// @param nonce Unique number to prevent replay attacks
-    /// @param quantity Amount of baseToken to trade
-    /// @param limitPrice Maximum/minimum price acceptable for the trade
-    /// @param stopPrice Price at which the order becomes active
-    /// @param expireTimestamp Time after which the order is invalid
-    /// @param side Whether this is a bid (buy) or ask (sell) order
-    /// @param onlyFullFill If true, order must be filled completely or not at all
-    struct Order {
-        address maker;
-        address executor;
-        uint256 nonce;
-        uint256 quantity;
-        uint256 limitPrice;
-        uint256 stopPrice;
-        uint256 expireTimestamp;
-        Side side;
-        bool onlyFullFill;
-    }
 
     /// @notice Tracks the filled quantity for each order hash
     mapping(bytes32 orderHash => uint256 filledQuantity) public pastOrders;
@@ -55,16 +25,7 @@ contract ClearingHouse is IClearingHouseErrors {
     /// @notice The price at which the last trade was executed
     uint256 public lastExecutionPrice;
 
-    constructor(uint256 initialExecutionPrice, address baseToken_, address quoteToken_) {
-        DOMAIN_SEPARATOR = keccak256(
-            abi.encode(
-                EIP712_DOMAIN_TYPEHASH,
-                keccak256(bytes("ClearingHouse")),
-                keccak256(bytes("1")),
-                block.chainid,
-                address(this)
-            )
-        );
+    constructor(uint256 initialExecutionPrice, address baseToken_, address quoteToken_) EIP712("ClearingHouse", "1") {
         lastExecutionPrice = initialExecutionPrice;
         baseToken = baseToken_;
         quoteToken = quoteToken_;
@@ -203,6 +164,10 @@ contract ClearingHouse is IClearingHouseErrors {
         );
     }
 
+    function DOMAIN_SEPARATOR() external view returns (bytes32) {
+        return _domainSeparatorV4();
+    }
+
     /* -------------------------------------------------------------------------- */
     /*                             Internal Functions                             */
     /* -------------------------------------------------------------------------- */
@@ -262,9 +227,9 @@ contract ClearingHouse is IClearingHouseErrors {
         view
         returns (bool)
     {
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, orderHash));
+        bytes32 typedDataHash = _hashTypedDataV4(orderHash);
 
-        address signer = ECDSA.recover(digest, signature);
+        address signer = ECDSA.recover(typedDataHash, signature);
         return signer == orderOwner;
     }
 }

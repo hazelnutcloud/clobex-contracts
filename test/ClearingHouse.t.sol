@@ -3,9 +3,14 @@ pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {ClearingHouse} from "../src/ClearingHouse.sol";
+import {IClearingHouse} from "../src/interfaces/IClearingHouse.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract ClearingHouseTest is Test {
+    bytes32 constant EIP712_DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
     ClearingHouse public clearingHouse;
     MockERC20 public baseToken;
     MockERC20 public quoteToken;
@@ -61,7 +66,7 @@ contract ClearingHouseTest is Test {
         ClearingHouse.Side side,
         bool onlyFullFill
     ) internal view returns (ClearingHouse.Order memory) {
-        return ClearingHouse.Order({
+        return IClearingHouse.Order({
             maker: maker,
             executor: executor,
             nonce: 0,
@@ -76,7 +81,7 @@ contract ClearingHouseTest is Test {
 
     function _signOrder(ClearingHouse.Order memory order, uint256 privateKey) internal view returns (bytes memory) {
         bytes32 orderHash = clearingHouse.hashOrder(order);
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", clearingHouse.DOMAIN_SEPARATOR(), orderHash));
+        bytes32 digest = MessageHashUtils.toTypedDataHash(clearingHouse.DOMAIN_SEPARATOR(), orderHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
         return abi.encodePacked(r, s, v);
     }
@@ -91,13 +96,13 @@ contract ClearingHouseTest is Test {
             type(uint256).max, // limitPrice
             0, // stopPrice
             block.timestamp + 1 days,
-            ClearingHouse.Side.Bid,
+            IClearingHouse.Side.Bid,
             false
         );
 
         // Create a matching ask limit order
         ClearingHouse.Order memory counterOrder = _createOrder(
-            maker2, 10e18, 100e18, type(uint256).max, block.timestamp + 1 days, ClearingHouse.Side.Ask, false
+            maker2, 10e18, 100e18, type(uint256).max, block.timestamp + 1 days, IClearingHouse.Side.Ask, false
         );
 
         ClearingHouse.Order[] memory counterOrders = new ClearingHouse.Order[](1);
@@ -134,12 +139,12 @@ contract ClearingHouseTest is Test {
             100e18,
             0,
             block.timestamp - 1, // Expired
-            ClearingHouse.Side.Bid,
+            IClearingHouse.Side.Bid,
             false
         );
 
         ClearingHouse.Order memory counterOrder =
-            _createOrder(maker2, 10e18, 100e18, 0, block.timestamp + 1 days, ClearingHouse.Side.Ask, false);
+            _createOrder(maker2, 10e18, 100e18, 0, block.timestamp + 1 days, IClearingHouse.Side.Ask, false);
 
         ClearingHouse.Order[] memory counterOrders = new ClearingHouse.Order[](1);
         counterOrders[0] = counterOrder;
@@ -163,7 +168,7 @@ contract ClearingHouseTest is Test {
             100e18,
             0,
             block.timestamp + 1 days,
-            ClearingHouse.Side.Bid,
+            IClearingHouse.Side.Bid,
             true // Only full fill
         );
 
@@ -174,7 +179,7 @@ contract ClearingHouseTest is Test {
             100e18,
             0,
             block.timestamp + 1 days,
-            ClearingHouse.Side.Ask,
+            IClearingHouse.Side.Ask,
             false
         );
 
@@ -193,7 +198,7 @@ contract ClearingHouseTest is Test {
 
     function test_CancelOrder() public {
         ClearingHouse.Order memory order =
-            _createOrder(maker1, 10e18, 100e18, 0, block.timestamp + 1 days, ClearingHouse.Side.Bid, false);
+            _createOrder(maker1, 10e18, 100e18, 0, block.timestamp + 1 days, IClearingHouse.Side.Bid, false);
 
         vm.prank(maker1);
         clearingHouse.cancelOrder(order);
