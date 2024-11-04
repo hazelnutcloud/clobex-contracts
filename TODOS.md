@@ -1,0 +1,3 @@
+- [ ] Add more tests
+- [ ] Implement Registry contract which is responsible for creating and keeping track of new ClearingHouse instances and potentially routing orders to them
+- [ ] Look into using price oracles instead of tracking the last executed price
