@@ -148,9 +148,9 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, IClearingHouseEv
 
     /// @notice Cancels an order by marking it as completely filled
     /// @param order The order to cancel
-    /// @dev Can only be called by the order maker
+    /// @dev Can only be called by the order maker or executor
     function cancelOrder(Order calldata order) external {
-        if (order.owner != msg.sender || order.executor != msg.sender) {
+        if (order.owner != msg.sender && order.executor != msg.sender) {
             revert UnauthorizedCancellation(msg.sender, order.owner);
         }
 
