@@ -150,7 +150,7 @@ contract ClearingHouse is IClearingHouse, IClearingHouseErrors, IClearingHouseEv
     /// @param order The order to cancel
     /// @dev Can only be called by the order maker
     function cancelOrder(Order calldata order) external {
-        if (order.owner != msg.sender) {
+        if (order.owner != msg.sender || order.executor != msg.sender) {
             revert UnauthorizedCancellation(msg.sender, order.owner);
         }
 
